@@ -40,14 +40,27 @@ internal static class Program
         HotKeys.Enable(true);
         try
         {
-            var form = new SettingsForm();
             var args = Environment.GetCommandLineArgs();
-            if (args.Contains("--show"))
+            var showSettings = args.Contains("--show");
+            var newVersionMessage = args.Contains("--newversion");
+
+            while (true)
             {
-                form.NewVersionMessage = args.Contains("--newversion");
-                form.Show();
+                var form = new SettingsForm(startHidden: !showSettings);
+                if (showSettings)
+                {
+                    form.NewVersionMessage = newVersionMessage;
+                    form.Show();
+                    showSettings = false;
+                    newVersionMessage = false;
+                }
+
+                Application.Run(form);
+                if (form.IsQuitting)
+                {
+                    break;
+                }
             }
-            Application.Run(form);
         }
         catch (ObjectDisposedException) { }
         catch (Exception e)

@@ -4,10 +4,30 @@ $root = $PSScriptRoot
 $csproj = "$root\src\TrayToolbar\TrayToolbar.csproj"
 $version = ([xml](Get-Content $csproj)).Project.PropertyGroup.Version
 
-msbuild -t:restore $csproj
+$msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
 
-msbuild -t:Publish -p:RuntimeIdentifier=win-arm64 $csproj -p:PublishDir=${root}\publish -p:Configuration=Release -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:SelfContained=false -p:PublishProtocol=FileSystem
+function Publish-Portable([string]$runtimeIdentifier)
+{
+    if ($msbuild)
+    {
+        & $msbuild.Source -t:Publish -p:RuntimeIdentifier=$runtimeIdentifier $csproj -p:PublishDir=${root}\publish -p:Configuration=Release -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:SelfContained=false -p:PublishProtocol=FileSystem
+        return
+    }
+
+    dotnet publish $csproj -c Release -r $runtimeIdentifier -o ${root}\publish --self-contained false /p:PublishSingleFile=true /p:PublishReadyToRun=false
+}
+
+if ($msbuild)
+{
+    & $msbuild.Source -t:restore $csproj
+}
+else
+{
+    dotnet restore $csproj
+}
+
+Publish-Portable "win-arm64"
 Compress-Archive "$root\publish\*.exe" "$root\TrayToolbar-win-arm64-portable-$version.zip" -Force
 
-msbuild -t:Publish -p:RuntimeIdentifier=win-x64 $csproj -p:PublishDir=${root}\publish -p:Configuration=Release -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:SelfContained=false -p:PublishProtocol=FileSystem
+Publish-Portable "win-x64"
 Compress-Archive "$root\publish\*.exe" "$root\TrayToolbar-win-x64-portable-$version.zip" -Force

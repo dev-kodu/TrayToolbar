@@ -11,6 +11,8 @@ namespace TrayToolbar;
 
 public partial class SettingsForm : Form
 {
+    private readonly bool startHidden;
+
     internal TrayToolbarConfiguration Configuration = new();
 
     internal Dictionary<FolderConfig, MenuItemCollection> MenuItems = [];
@@ -40,8 +42,9 @@ public partial class SettingsForm : Form
         CultureInfo.GetCultureInfo("ko"),
     ];
 
-    public SettingsForm()
+    public SettingsForm(bool startHidden = true)
     {
+        this.startHidden = startHidden;
         InitializeComponent();
         SetupMenu();
         PopulateConfig();
@@ -89,7 +92,7 @@ public partial class SettingsForm : Form
         if (TrayIcons.Count > value && !Visible)
         {
             var t = TrayIcons[value];
-            TrayIcon_Click(t, new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0));
+            TrayIcon_MouseClick(t, new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0));
         }
     }
 
@@ -201,10 +204,13 @@ public partial class SettingsForm : Form
     private bool initVisible = false;
     protected override void SetVisibleCore(bool value)
     {
-        if (!initVisible && File.Exists(ConfigHelper.ConfigurationFile))
+        if (!initVisible)
         {
             initVisible = true;
-            return;
+            if (startHidden && value && File.Exists(ConfigHelper.ConfigurationFile))
+            {
+                return;
+            }
         }
         base.SetVisibleCore(value);
     }
@@ -345,7 +351,7 @@ public partial class SettingsForm : Form
             Text = text,
             Visible = true,
         };
-        icon.Click += TrayIcon_Click;
+        icon.MouseClick += TrayIcon_MouseClick;
         icon.DoubleClick += TrayIcon_DoubleClick;
         return icon;
     }
@@ -427,12 +433,12 @@ public partial class SettingsForm : Form
                 yield return control;
     }
 
-    private void TrayIcon_Click(object? sender, EventArgs e)
+    private void TrayIcon_MouseClick(object? sender, MouseEventArgs e)
     {
         var trayIcon = (NotifyIcon)sender!;
         var folder = (FolderConfig)trayIcon.Tag!;
         SettingsForm_SystemThemeChanged(null, EventArgs.Empty);
-        if (((MouseEventArgs)e).Button == MouseButtons.Right)
+        if (e.Button == MouseButtons.Right)
         {
             var font = RightClickMenu.Font;
             RightClickMenu.Font = new Font(font.FontFamily, Configuration.FontSize, font.Style, font.Unit, font.GdiCharSet, font.GdiVerticalFont);
@@ -482,19 +488,31 @@ public partial class SettingsForm : Form
 
     private void ReloadMenuItems(FolderConfig folder, CancellationToken token)
     {
-        lock (MenuItems[folder])
+        var menu = new MenuItemCollection(Configuration, LeftClickMenu_ItemClicked, LeftClickMenuEntry_MouseDown)
         {
-            var menu = MenuItems[folder];
-            menu.Clear();
-            if (!folder.Name.HasValue() || !folder.Name.IsDirectory()) return;
-
-            foreach (var file in EnumerateFiles(folder.Name.ToLocalPath(), folder.Recursive))
-            {
-                if (token.IsCancellationRequested == true) { return; }
-                Invoke(() => menu.CreateMenuItem(file, folder));
-            }
-            SetupLeftClickMenu(menu);
+            NeedsRefresh = true
+        };
+        if (!folder.Name.HasValue() || !folder.Name.IsDirectory())
+        {
+            return;
         }
+
+        menu.LoadFolderMenu(folder);
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        Invoke(() =>
+        {
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            MenuItems[folder] = menu;
+            SetupLeftClickMenu(menu);
+        });
     }
 
     private void LeftClickMenuEntry_MouseDown(object? sender, MouseEventArgs e)
@@ -532,6 +550,21 @@ public partial class SettingsForm : Form
         ShowNormal();
     }
 
+    private void HideToTray()
+    {
+        if (InvokeRequired)
+        {
+            Invoke(HideToTray, []);
+            return;
+        }
+
+        LeftClickMenu.Hide();
+        RightClickMenu.Hide();
+        ShowInTaskbar = false;
+        WindowState = FormWindowState.Normal;
+        Hide();
+    }
+
     private void ShowNormal()
     {
         if (InvokeRequired)
@@ -540,12 +573,15 @@ public partial class SettingsForm : Form
             return;
         }
         SettingsForm_SystemThemeChanged(null, EventArgs.Empty);
-        Visible = true;
+        Show();
         ShowInTaskbar = true;
         WindowState = FormWindowState.Normal;
+        Activate();
     }
 
     private bool quitting = false;
+    internal bool IsQuitting => quitting;
+
     private void Quit()
     {
         quitting = true;
@@ -555,14 +591,14 @@ public partial class SettingsForm : Form
 
     private void SettingsForm_FormClosing(object sender, FormClosingEventArgs e)
     {
-        if (!quitting)
+        if (!quitting && e.CloseReason == CloseReason.UserClosing)
         {
-            Visible = false;
-            ShowInTaskbar = false;
+            HideToTray();
             e.Cancel = true;
         }
         else
         {
+            quitting = true;
             UpdateCheckTimer?.Dispose();
         }
     }
@@ -571,8 +607,7 @@ public partial class SettingsForm : Form
     {
         if (WindowState == FormWindowState.Minimized)
         {
-            Visible = false;
-            ShowInTaskbar = false;
+            HideToTray();
         }
     }
 
@@ -629,8 +664,7 @@ public partial class SettingsForm : Form
                 LeftClickMenu.Close(ToolStripDropDownCloseReason.ItemClicked);
                 if (Visible)
                 {
-                    Visible = false;
-                    ShowInTaskbar = false;
+                    HideToTray();
                 }
             }
         }
