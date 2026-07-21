@@ -108,3 +108,23 @@ Both apply to all C# here and are **not optional**:
   diagnostic there will ever be.**
 
 These are KADE-fork-local additions. Keep them out of upstream-bound diffs.
+
+## Fleet operations — build, worktrees, CI (pointers, not copies)
+
+Canonical operational docs live in `dev-kodu/KADE.Tekla`:
+[`docs/CI.md`](https://github.com/dev-kodu/KADE.Tekla/blob/main/docs/CI.md) (fleet CI) ·
+[`docs/REMOTE-BUILD.md`](https://github.com/dev-kodu/KADE.Tekla/blob/main/docs/REMOTE-BUILD.md) (SSH builds).
+Do not copy their content here — pointers cannot drift.
+
+- **Worktrees (MANDATORY, fleet-wide):** the primary checkout `D:\Dev\<Repo>` stays parked on a
+  clean default branch — ALL work (edits, reviews, audits, reading) runs in a worktree under
+  `.worktrees\<leaf>`. Finish: push → PR → squash-merge via `~/.claude/tools/pr-merge.ps1`
+  (never raw `gh pr merge`, never push the default branch; upstream-fork syncs use `-Method merge`).
+- **CI:** PRs build on the self-hosted host (`[self-hosted, kade-build]`) through the reusable
+  workflow `dev-kodu/.github/.github/workflows/kade-ci.yml` plus a ~25-line caller stub in the
+  repo. Workflow steps run on Windows: **`shell: pwsh`, never `bash`**. Private siblings clone
+  via the runner's read-only deploy keys — no PATs, no `KADE_SIBLING_TOKEN`.
+- **Local builds:** fine in this repo. Only `KADE.Tekla` forbids local builds — there, use the
+  SSH wrappers (`~/.claude/tools/kade-remote-build.ps1 -Plugin <Name> -TeklaVersion 2026`).
+- **Remote/SSH build box:** `Kalev@100.68.52.24` (Tailscale) — two GitHub runners, the vcpkg
+  asset/binary caches, and the Tekla toolchain live there. Read REMOTE-BUILD.md before using it.
